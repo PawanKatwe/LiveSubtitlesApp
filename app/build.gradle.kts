@@ -42,6 +42,8 @@ android {
 }
 
 dependencies {
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
+
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
@@ -50,9 +52,6 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-
-    // Sherpa-ONNX for Offline Speech-to-Text & Translation (Whisper / Moonshine / SenseVoice)
-    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx:1.10.19")
 
     // OkHttp for Hybrid Cloud Fallback (Groq / OpenAI Whisper translation endpoint)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

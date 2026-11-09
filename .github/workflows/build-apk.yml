@@ -24,6 +24,15 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: Ensure Sherpa-ONNX AAR is present
+        run: |
+          mkdir -p app/libs
+          if [ ! -f "app/libs/sherpa-onnx.aar" ]; then
+            echo "Downloading Sherpa-ONNX pre-built AAR..."
+            curl -L -o app/libs/sherpa-onnx.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-static-link-onnxruntime-2.0.1.aar
+          fi
+          ls -la app/libs/
+
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 

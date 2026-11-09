@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlayContainer"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_overlay_card"
+    android:orientation="vertical"
+    android:minWidth="260dp"
+    android:maxWidth="360dp">
+
+    <!-- Top control & drag bar -->
+    <LinearLayout
+        android:id="@+id/dragHandle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/tvEngineBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="EN SUBTITLES"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:textColor="@color/subtitle_accent"
+            android:letterSpacing="0.08" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text=" • Listening..."
+            android:textSize="10sp"
+            android:textColor="#9CA3AF"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <ImageView
+            android:id="@+id/btnCloseOverlay"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Close Subtitles"
+            android:src="@android:drawable/ic_menu_close_clear_cancel" />
+    </LinearLayout>
+
+    <!-- Subtitle text box -->
+    <TextView
+        android:id="@+id/tvSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Waiting for spoken dialogue..."
+        android:textColor="@color/subtitle_text"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:shadowColor="#FF000000"
+        android:shadowDx="1.5"
+        android:shadowDy="1.5"
+        android:shadowRadius="2.0"
+        android:lineSpacingExtra="3dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp" />
+
+</LinearLayout>

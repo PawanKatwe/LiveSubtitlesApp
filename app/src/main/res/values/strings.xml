@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Live Audio Subtitles</string>
+    <string name="service_notification_channel">Live Subtitles Service</string>
+    <string name="service_running_desc">Capturing system media audio and translating subtitles...</string>
+    <string name="start_service">Start Subtitle Service</string>
+    <string name="stop_service">Stop Subtitle Service</string>
+    <string name="overlay_permission_required">Overlay permission is required to display subtitles over other apps.</string>
+    <string name="grant_permission">Grant Overlay Permission</string>
+    <string name="engine_offline">Offline (On-Device Whisper)</string>
+    <string name="engine_hybrid">Hybrid (Cloud Groq/OpenAI - Fast)</string>
+</resources>

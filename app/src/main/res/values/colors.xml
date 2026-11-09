@@ -1,0 +1,12 @@
+<resources>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="overlay_bg">#D9111827</color>
+    <color name="overlay_border">#374151</color>
+    <color name="subtitle_text">#FFFFFF</color>
+    <color name="subtitle_accent">#38BDF8</color>
+</resources>

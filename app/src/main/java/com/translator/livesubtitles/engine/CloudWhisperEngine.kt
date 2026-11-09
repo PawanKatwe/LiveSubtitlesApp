@@ -91,22 +91,22 @@ class CloudWhisperEngine(
 
         // RIFF header
         out.writeBytes("RIFF")
-        out.writeInt(Integer.reverseBytes(totalDataLen))
+        writeIntLE(out, totalDataLen)
         out.writeBytes("WAVE")
 
         // fmt chunk
         out.writeBytes("fmt ")
-        out.writeInt(Integer.reverseBytes(16)) // sub-chunk size
-        out.writeShort(java.lang.Short.reverseBytes(1)) // AudioFormat (1 = PCM)
-        out.writeShort(java.lang.Short.reverseBytes(channels.toShort()))
-        out.writeInt(Integer.reverseBytes(sampleRate))
-        out.writeInt(Integer.reverseBytes(byteRate))
-        out.writeShort(java.lang.Short.reverseBytes((channels * 2).toShort())) // block align
-        out.writeShort(java.lang.Short.reverseBytes(16)) // bits per sample
+        writeIntLE(out, 16) // sub-chunk size
+        writeShortLE(out, 1.toShort()) // AudioFormat (1 = PCM)
+        writeShortLE(out, channels.toShort())
+        writeIntLE(out, sampleRate)
+        writeIntLE(out, byteRate)
+        writeShortLE(out, (channels * 2).toShort()) // block align
+        writeShortLE(out, 16.toShort()) // bits per sample
 
         // data chunk
         out.writeBytes("data")
-        out.writeInt(Integer.reverseBytes(totalAudioLen))
+        writeIntLE(out, totalAudioLen)
 
         // Write PCM 16-bit little endian
         for (sample in pcmData) {
@@ -116,6 +116,18 @@ class CloudWhisperEngine(
 
         out.flush()
         return byteBuffer.toByteArray()
+    }
+
+    private fun writeIntLE(out: DataOutputStream, value: Int) {
+        out.writeByte(value and 0xFF)
+        out.writeByte((value shr 8) and 0xFF)
+        out.writeByte((value shr 16) and 0xFF)
+        out.writeByte((value shr 24) and 0xFF)
+    }
+
+    private fun writeShortLE(out: DataOutputStream, value: Short) {
+        out.writeByte(value.toInt() and 0xFF)
+        out.writeByte((value.toInt() shr 8) and 0xFF)
     }
 
     override fun release() {

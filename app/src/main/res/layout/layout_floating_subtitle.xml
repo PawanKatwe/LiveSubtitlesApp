@@ -52,7 +52,7 @@
         android:id="@+id/tvSubtitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Waiting for spoken dialogue..."
+        android:text="🟢 Subtitles Ready! Play any video/game."
         android:textColor="@color/subtitle_text"
         android:textSize="16sp"
         android:textStyle="bold"

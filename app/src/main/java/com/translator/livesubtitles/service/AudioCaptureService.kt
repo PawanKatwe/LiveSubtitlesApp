@@ -83,7 +83,7 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, android.app.Activity.RESULT_CANCELED)
         val resultData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
         } else {
@@ -94,9 +94,11 @@ class AudioCaptureService : Service() {
         val engineType = intent.getIntExtra(EXTRA_ENGINE_TYPE, ENGINE_OFFLINE)
         val apiKey = intent.getStringExtra(EXTRA_API_KEY) ?: ""
 
-        if (resultCode != -1 && resultData != null) {
+        // Always show overlay immediately when service starts
+        initOverlay()
+
+        if (resultCode == android.app.Activity.RESULT_OK && resultData != null) {
             try {
-                initOverlay()
                 initEngine(engineType, apiKey)
                 startAudioPlaybackCapture(resultCode, resultData)
                 isRunning = true
@@ -105,8 +107,8 @@ class AudioCaptureService : Service() {
                 overlayManager?.updateSubtitle("Startup error: ${e.message}")
             }
         } else {
-            Log.e(TAG, "Missing MediaProjection resultCode or resultData")
-            stopSelf()
+            Log.e(TAG, "Missing MediaProjection consent. resultCode: $resultCode, resultData: $resultData")
+            overlayManager?.updateSubtitle("Consent needed: Open app & tap Start Subtitles")
         }
 
         return START_NOT_STICKY

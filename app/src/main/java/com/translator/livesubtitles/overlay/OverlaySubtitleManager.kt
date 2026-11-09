@@ -41,7 +41,7 @@ class OverlaySubtitleManager(
 
         tvSubtitle = overlayView?.findViewById(R.id.tvSubtitle)
         tvStatus = overlayView?.findViewById(R.id.tvStatus)
-        tvBadge = overlayView?.findViewById(R.id.tvBadge)
+        tvBadge = overlayView?.findViewById(R.id.tvEngineBadge)
         val btnClose = overlayView?.findViewById<ImageView>(R.id.btnCloseOverlay)
         val dragHandle = overlayView?.findViewById<View>(R.id.dragHandle)
 

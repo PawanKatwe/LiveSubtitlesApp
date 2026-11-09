@@ -23,6 +23,7 @@ class OfflineWhisperEngine(private val context: Context) : TranslationEngine {
 
     private var recognizer: OfflineRecognizer? = null
     private var isInitialized = false
+    private var initErrorMessage: String? = null
 
     init {
         initializeRecognizer()
@@ -30,8 +31,6 @@ class OfflineWhisperEngine(private val context: Context) : TranslationEngine {
 
     private fun initializeRecognizer() {
         try {
-            // Models can be bundled in app internal files or assets
-            // Example structure: filesDir/models/whisper-tiny/
             val modelDir = File(context.filesDir, "models/whisper-tiny")
             val encoder = File(modelDir, "tiny-encoder.int8.onnx")
             val decoder = File(modelDir, "tiny-decoder.int8.onnx")
@@ -43,36 +42,45 @@ class OfflineWhisperEngine(private val context: Context) : TranslationEngine {
                     decoder = decoder.absolutePath,
                     language = "",       // Auto-detect source language
                     task = "translate",   // Translate to English!
-                    tailPaddings = 1000
+                    tailPaddings = 1000,
+                    enableTokenTimestamps = false,
+                    enableSegmentTimestamps = false
                 )
 
-                val modelConfig = OfflineModelConfig(
-                    whisper = whisperConfig,
-                    tokens = tokens.absolutePath,
-                    numThreads = 2,
-                    debug = false,
+                val modelConfig = OfflineModelConfig().apply {
+                    whisper = whisperConfig
+                    this.tokens = tokens.absolutePath
+                    numThreads = 2
+                    debug = false
                     provider = "cpu"
-                )
+                }
 
                 val config = OfflineRecognizerConfig(
                     featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
                     modelConfig = modelConfig
                 )
 
-                recognizer = OfflineRecognizer(context.assets, config)
+                // Pass assetManager = null for local filesystem files
+                recognizer = OfflineRecognizer(
+                    assetManager = null,
+                    config = config
+                )
                 isInitialized = true
-                Log.i(TAG, "Offline Whisper model loaded successfully.")
+                initErrorMessage = null
+                Log.i(TAG, "Offline Whisper model loaded successfully from filesystem.")
             } else {
-                Log.w(TAG, "Whisper model files not found in ${modelDir.absolutePath}. Expecting tiny-encoder.int8.onnx, etc.")
+                initErrorMessage = "Model files missing in ${modelDir.name}. Tap 'Download Model' on home screen."
+                Log.w(TAG, initErrorMessage!!)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            initErrorMessage = "Init error: ${e.message}"
             Log.e(TAG, "Failed to initialize OfflineRecognizer", e)
         }
     }
 
     override suspend fun translateAudioChunk(pcmData: ShortArray): String? = withContext(Dispatchers.Default) {
         if (!isInitialized || recognizer == null) {
-            return@withContext "[Offline model not downloaded. Tap 'Download Model' in app or switch to Hybrid mode]"
+            return@withContext "[${initErrorMessage ?: "Offline model not ready. Tap Download Model in app."}]"
         }
 
         try {
@@ -87,9 +95,9 @@ class OfflineWhisperEngine(private val context: Context) : TranslationEngine {
             stream.release()
 
             if (text.isNotEmpty()) text else null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error translating audio chunk", e)
-            null
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error translating offline audio chunk", e)
+            "[Offline decode error: ${e.message}]"
         }
     }
 
@@ -98,7 +106,7 @@ class OfflineWhisperEngine(private val context: Context) : TranslationEngine {
             recognizer?.release()
             recognizer = null
             isInitialized = false
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error releasing recognizer", e)
         }
     }

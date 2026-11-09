@@ -154,6 +154,19 @@ class MainActivity : AppCompatActivity() {
                     prefs.edit().putString(KEY_API_KEY, apiKey).apply()
                 }
 
+                // If offline mode is selected, verify model is downloaded
+                if (binding.rbOffline.isChecked) {
+                    val modelDir = File(filesDir, "models/whisper-tiny")
+                    val encoder = File(modelDir, "tiny-encoder.int8.onnx")
+                    val decoder = File(modelDir, "tiny-decoder.int8.onnx")
+                    val tokens = File(modelDir, "tiny-tokens.txt")
+                    if (!encoder.exists() || !decoder.exists() || !tokens.exists()) {
+                        Toast.makeText(this, "Please download the offline model (~75 MB) first by tapping 'Download Whisper Model'.", Toast.LENGTH_LONG).show()
+                        downloadWhisperModel()
+                        return@setOnClickListener
+                    }
+                }
+
                 // Prompt user for MediaProjection consent (Start casting/recording)
                 val captureIntent = mediaProjectionManager.createScreenCaptureIntent()
                 mediaProjectionLauncher.launch(captureIntent)
@@ -212,7 +225,7 @@ class MainActivity : AppCompatActivity() {
         val tokens = File(modelDir, "tiny-tokens.txt")
 
         if (encoder.exists() && decoder.exists() && tokens.exists()) {
-            binding.tvModelStatus.text = "Offline Whisper Model Ready ✓"
+            binding.tvModelStatus.text = "Offline Whisper Model Ready ✓ (${(encoder.length() + decoder.length()) / 1024 / 1024} MB)"
             binding.tvModelStatus.setTextColor(ContextCompat.getColor(this, R.color.teal_700))
             binding.btnDownloadModel.visibility = View.GONE
         } else {
@@ -225,7 +238,7 @@ class MainActivity : AppCompatActivity() {
     private fun downloadWhisperModel() {
         binding.progressBarModel.visibility = View.VISIBLE
         binding.btnDownloadModel.isEnabled = false
-        binding.tvModelStatus.text = "Downloading Whisper Tiny quantized ONNX model..."
+        binding.tvModelStatus.text = "Downloading Whisper model files (~75 MB)..."
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -233,25 +246,19 @@ class MainActivity : AppCompatActivity() {
                 val baseUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main"
 
                 val files = listOf(
+                    "tiny-tokens.txt",
                     "tiny-encoder.int8.onnx",
-                    "tiny-decoder.int8.onnx",
-                    "tiny-tokens.txt"
+                    "tiny-decoder.int8.onnx"
                 )
 
-                for (fileName in files) {
+                for ((index, fileName) in files.withIndex()) {
+                    withContext(Dispatchers.Main) {
+                        binding.tvModelStatus.text = "Downloading ${index + 1}/${files.size}: $fileName..."
+                    }
+
                     val destFile = File(modelDir, fileName)
-                    if (!destFile.exists()) {
-                        val url = URL("$baseUrl/$fileName")
-                        val connection = (url.openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 15000
-                            readTimeout = 30000
-                            instanceFollowRedirects = true
-                        }
-                        connection.inputStream.use { input ->
-                            FileOutputStream(destFile).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
+                    if (!destFile.exists() || destFile.length() < 100) {
+                        downloadWithRedirects("$baseUrl/$fileName", destFile)
                     }
                 }
 
@@ -259,17 +266,55 @@ class MainActivity : AppCompatActivity() {
                     binding.progressBarModel.visibility = View.GONE
                     binding.btnDownloadModel.isEnabled = true
                     checkOfflineModelStatus()
-                    Toast.makeText(this@MainActivity, "Offline model downloaded successfully!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Offline Whisper model ready to use!", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     binding.progressBarModel.visibility = View.GONE
                     binding.btnDownloadModel.isEnabled = true
-                    binding.tvModelStatus.text = "Download failed: ${e.message}. Use Hybrid mode instead."
-                    Toast.makeText(this@MainActivity, "Download error: ${e.message}", Toast.LENGTH_LONG).show()
+                    binding.tvModelStatus.text = "Download failed: ${e.message}"
+                    Toast.makeText(this@MainActivity, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    private fun downloadWithRedirects(urlStr: String, destFile: File) {
+        var currentUrl = urlStr
+        var connection: HttpURLConnection
+        var redirectCount = 0
+
+        while (redirectCount < 5) {
+            val url = URL(currentUrl)
+            connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = 20000
+            connection.readTimeout = 40000
+            connection.instanceFollowRedirects = false // Manually handle 302/307 to CDN
+            val code = connection.responseCode
+
+            if (code == HttpURLConnection.HTTP_MOVED_PERM ||
+                code == HttpURLConnection.HTTP_MOVED_TEMP ||
+                code == 307 || code == 308) {
+                val location = connection.getHeaderField("Location")
+                if (location != null) {
+                    currentUrl = location
+                    redirectCount++
+                    continue
+                }
+            }
+
+            if (code == HttpURLConnection.HTTP_OK) {
+                connection.inputStream.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                return
+            } else {
+                throw Exception("HTTP $code from $currentUrl")
+            }
+        }
+        throw Exception("Too many redirects")
     }
 
     private fun startAudioService(resultCode: Int, resultData: Intent) {

@@ -5,11 +5,12 @@ import kotlin.math.sqrt
 /**
  * Processes continuous audio samples from system playback capture.
  * Detects voice activity using energy (RMS) thresholding and packages audio into
- * optimal slices (2 to 3.5 seconds) for translation models.
+ * optimal slices (1.5 to 3.5 seconds) for translation models.
  */
 class AudioProcessor(
     private val sampleRate: Int = 16000,
-    private val energyThreshold: Double = 600.0, // Energy threshold for speech vs silence
+    private val energyThreshold: Double = 300.0, // Sensitive threshold for media dialogue
+    private val onStatusUpdate: ((String) -> Unit)? = null,
     private val onChunkReady: suspend (ShortArray) -> Unit
 ) {
 
@@ -22,16 +23,32 @@ class AudioProcessor(
     private var consecutiveSilenceSamples = 0
     private var hasSpeech = false
 
+    private var sampleCounter = 0
+    private var lastStatusUpdate = 0L
+
     suspend fun processSamples(samples: ShortArray, readCount: Int) {
         if (readCount <= 0) return
 
-        // Calculate Root Mean Square (RMS) energy for the frame
+        // Calculate Root Mean Square (RMS) energy for this frame
         var sumSquares = 0.0
         for (i in 0 until readCount) {
             sumSquares += samples[i].toDouble() * samples[i].toDouble()
         }
         val rms = sqrt(sumSquares / readCount)
         val isSpeech = rms > energyThreshold
+
+        sampleCounter += readCount
+        val now = System.currentTimeMillis()
+        if (now - lastStatusUpdate > 800) {
+            lastStatusUpdate = now
+            if (isSpeech) {
+                onStatusUpdate?.invoke("🟢 Voice Detected")
+            } else if (rms > 80) {
+                onStatusUpdate?.invoke("🔉 Media Playing (Volume: ${rms.toInt()})")
+            } else {
+                onStatusUpdate?.invoke("⚪ Media Silent / Paused")
+            }
+        }
 
         if (isSpeech) {
             hasSpeech = true
@@ -48,9 +65,7 @@ class AudioProcessor(
             }
         }
 
-        // Trigger translation if:
-        // 1. We reached max duration (3.5s)
-        // 2. Or speech was present and a 500ms pause occurred, with at least 1.5s total speech
+        // Trigger translation if max chunk reached or pause occurred after speech
         val shouldEmit = (speechBuffer.size >= maxChunkSamples) ||
                 (hasSpeech && consecutiveSilenceSamples >= silenceThresholdSamples && speechBuffer.size >= minChunkSamples)
 
@@ -66,7 +81,7 @@ class AudioProcessor(
                 chunkArray[i] = speechBuffer[i]
             }
 
-            // Keep a 250ms tail overlap to prevent clipping word edges
+            // Keep 250ms tail overlap to prevent clipping word edges
             val overlapSamples = (sampleRate * 0.25).toInt()
             val keepCount = if (speechBuffer.size > overlapSamples) overlapSamples else 0
             val overlapList = speechBuffer.takeLast(keepCount)

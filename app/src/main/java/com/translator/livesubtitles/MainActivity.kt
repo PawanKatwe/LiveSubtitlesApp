@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -15,15 +16,29 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.translator.livesubtitles.databinding.ActivityMainBinding
 import com.translator.livesubtitles.service.AudioCaptureService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var mediaProjectionManager: MediaProjectionManager
+    private lateinit var prefs: SharedPreferences
 
-    // Permission launchers
+    companion object {
+        private const val PREFS_NAME = "live_subtitles_prefs"
+        private const val KEY_API_KEY = "api_key"
+        private const val KEY_ENGINE_TYPE = "engine_type"
+    }
+
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
@@ -36,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             startAudioService(result.resultCode, result.data!!)
         } else {
-            Toast.makeText(this, "Media projection permission cancelled.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Screen/Audio capture permission was not granted.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -45,7 +60,7 @@ class MainActivity : AppCompatActivity() {
     ) { permissions ->
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
         if (!recordAudioGranted) {
-            Toast.makeText(this, "Audio recording permission is required.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Audio recording permission is required to capture system sound.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -55,15 +70,37 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+        loadSavedSettings()
         setupUI()
         checkAppPermissions()
+        checkOfflineModelStatus()
     }
 
     override fun onResume() {
         super.onResume()
         updatePermissionUI()
         updateServiceButtonState()
+        checkOfflineModelStatus()
+    }
+
+    private fun loadSavedSettings() {
+        val savedKey = prefs.getString(KEY_API_KEY, "") ?: ""
+        if (savedKey.isNotEmpty()) {
+            binding.etApiKey.setText(savedKey)
+        }
+
+        val savedEngine = prefs.getInt(KEY_ENGINE_TYPE, AudioCaptureService.ENGINE_HYBRID_CLOUD)
+        if (savedEngine == AudioCaptureService.ENGINE_OFFLINE) {
+            binding.rbOffline.isChecked = true
+            binding.layoutApiKey.visibility = View.GONE
+            binding.layoutOfflineDownload.visibility = View.VISIBLE
+        } else {
+            binding.rbCloud.isChecked = true
+            binding.layoutApiKey.visibility = View.VISIBLE
+            binding.layoutOfflineDownload.visibility = View.GONE
+        }
     }
 
     private fun setupUI() {
@@ -78,9 +115,18 @@ class MainActivity : AppCompatActivity() {
         binding.rgEngine.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == R.id.rbCloud) {
                 binding.layoutApiKey.visibility = View.VISIBLE
+                binding.layoutOfflineDownload.visibility = View.GONE
+                prefs.edit().putInt(KEY_ENGINE_TYPE, AudioCaptureService.ENGINE_HYBRID_CLOUD).apply()
             } else {
                 binding.layoutApiKey.visibility = View.GONE
+                binding.layoutOfflineDownload.visibility = View.VISIBLE
+                prefs.edit().putInt(KEY_ENGINE_TYPE, AudioCaptureService.ENGINE_OFFLINE).apply()
+                checkOfflineModelStatus()
             }
+        }
+
+        binding.btnDownloadModel.setOnClickListener {
+            downloadWhisperModel()
         }
 
         binding.btnToggleService.setOnClickListener {
@@ -88,9 +134,26 @@ class MainActivity : AppCompatActivity() {
                 stopAudioService()
             } else {
                 if (!checkOverlayPermission()) {
-                    Toast.makeText(this, "Please grant Overlay permission first.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Please grant Overlay permission first so subtitles can float.", Toast.LENGTH_SHORT).show()
+                    binding.btnGrantOverlay.performClick()
                     return@setOnClickListener
                 }
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "Audio permission needed to capture media playback.", Toast.LENGTH_SHORT).show()
+                    requestAudioPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                    return@setOnClickListener
+                }
+
+                // If cloud mode is selected, check API key
+                if (binding.rbCloud.isChecked) {
+                    val apiKey = binding.etApiKey.text?.toString()?.trim() ?: ""
+                    if (apiKey.isEmpty()) {
+                        Toast.makeText(this, "Please enter your free Groq API key first (from console.groq.com)", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    prefs.edit().putString(KEY_API_KEY, apiKey).apply()
+                }
+
                 // Prompt user for MediaProjection consent (Start casting/recording)
                 val captureIntent = mediaProjectionManager.createScreenCaptureIntent()
                 mediaProjectionLauncher.launch(captureIntent)
@@ -124,7 +187,7 @@ class MainActivity : AppCompatActivity() {
             binding.tvPermissionStatus.text = "Step 1: Overlay Permission Granted ✓"
             binding.tvPermissionStatus.setTextColor(ContextCompat.getColor(this, R.color.teal_700))
             binding.btnGrantOverlay.isEnabled = false
-            binding.btnGrantOverlay.text = "Permission Granted"
+            binding.btnGrantOverlay.text = "Overlay Permission Active"
         } else {
             binding.tvPermissionStatus.text = "Step 1: Overlay Permission Required"
             binding.btnGrantOverlay.isEnabled = true
@@ -139,6 +202,73 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.btnToggleService.text = "Start Subtitle Service"
             binding.btnToggleService.setBackgroundColor(ContextCompat.getColor(this, R.color.purple_500))
+        }
+    }
+
+    private fun checkOfflineModelStatus() {
+        val modelDir = File(filesDir, "models/whisper-tiny")
+        val encoder = File(modelDir, "tiny-encoder.int8.onnx")
+        val decoder = File(modelDir, "tiny-decoder.int8.onnx")
+        val tokens = File(modelDir, "tiny-tokens.txt")
+
+        if (encoder.exists() && decoder.exists() && tokens.exists()) {
+            binding.tvModelStatus.text = "Offline Whisper Model Ready ✓"
+            binding.tvModelStatus.setTextColor(ContextCompat.getColor(this, R.color.teal_700))
+            binding.btnDownloadModel.visibility = View.GONE
+        } else {
+            binding.tvModelStatus.text = "Offline Whisper model not downloaded (~75 MB)."
+            binding.tvModelStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_dark))
+            binding.btnDownloadModel.visibility = View.VISIBLE
+        }
+    }
+
+    private fun downloadWhisperModel() {
+        binding.progressBarModel.visibility = View.VISIBLE
+        binding.btnDownloadModel.isEnabled = false
+        binding.tvModelStatus.text = "Downloading Whisper Tiny quantized ONNX model..."
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val modelDir = File(filesDir, "models/whisper-tiny").apply { mkdirs() }
+                val baseUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main"
+
+                val files = listOf(
+                    "tiny-encoder.int8.onnx",
+                    "tiny-decoder.int8.onnx",
+                    "tiny-tokens.txt"
+                )
+
+                for (fileName in files) {
+                    val destFile = File(modelDir, fileName)
+                    if (!destFile.exists()) {
+                        val url = URL("$baseUrl/$fileName")
+                        val connection = (url.openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 15000
+                            readTimeout = 30000
+                            instanceFollowRedirects = true
+                        }
+                        connection.inputStream.use { input ->
+                            FileOutputStream(destFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    binding.progressBarModel.visibility = View.GONE
+                    binding.btnDownloadModel.isEnabled = true
+                    checkOfflineModelStatus()
+                    Toast.makeText(this@MainActivity, "Offline model downloaded successfully!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    binding.progressBarModel.visibility = View.GONE
+                    binding.btnDownloadModel.isEnabled = true
+                    binding.tvModelStatus.text = "Download failed: ${e.message}. Use Hybrid mode instead."
+                    Toast.makeText(this@MainActivity, "Download error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -160,7 +290,7 @@ class MainActivity : AppCompatActivity() {
 
         ContextCompat.startForegroundService(this, serviceIntent)
         updateServiceButtonState()
-        Toast.makeText(this, "Live Subtitles started!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Live Subtitles started! Look for floating overlay on screen.", Toast.LENGTH_LONG).show()
     }
 
     private fun stopAudioService() {

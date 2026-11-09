@@ -50,6 +50,9 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 
+    // ONNX Runtime for Sherpa-ONNX offline engine
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.1")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 

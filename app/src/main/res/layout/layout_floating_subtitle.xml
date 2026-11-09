@@ -40,9 +40,9 @@
 
         <ImageView
             android:id="@+id/btnCloseOverlay"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:padding="2dp"
             android:contentDescription="Close Subtitles"
             android:src="@android:drawable/ic_menu_close_clear_cancel" />
     </LinearLayout>

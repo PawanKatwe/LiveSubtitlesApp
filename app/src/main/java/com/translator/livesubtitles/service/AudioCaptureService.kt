@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.translator.livesubtitles.MainActivity
 import com.translator.livesubtitles.R
 import com.translator.livesubtitles.audio.AudioProcessor
@@ -74,20 +75,37 @@ class AudioCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) return START_NOT_STICKY
+        // Crucial: Always promote to foreground immediately to satisfy Android 14 5-second SLA
+        startForegroundServiceWithNotification()
+
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
-        val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+        val resultData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(EXTRA_RESULT_DATA)
+        }
+
         val engineType = intent.getIntExtra(EXTRA_ENGINE_TYPE, ENGINE_OFFLINE)
         val apiKey = intent.getStringExtra(EXTRA_API_KEY) ?: ""
 
         if (resultCode != -1 && resultData != null) {
-            startForegroundServiceWithNotification()
-            initEngine(engineType, apiKey)
-            initOverlay()
-            startAudioPlaybackCapture(resultCode, resultData)
-            isRunning = true
+            try {
+                initOverlay()
+                initEngine(engineType, apiKey)
+                startAudioPlaybackCapture(resultCode, resultData)
+                isRunning = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Fatal error starting audio capture", e)
+                overlayManager?.updateSubtitle("Startup error: ${e.message}")
+            }
         } else {
+            Log.e(TAG, "Missing MediaProjection resultCode or resultData")
             stopSelf()
         }
 
@@ -126,7 +144,8 @@ class AudioCaptureService : Service() {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
+            ServiceCompat.startForeground(
+                this,
                 NOTIFICATION_ID,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
@@ -137,9 +156,14 @@ class AudioCaptureService : Service() {
     }
 
     private fun initEngine(engineType: Int, apiKey: String) {
-        translationEngine = when (engineType) {
-            ENGINE_HYBRID_CLOUD -> CloudWhisperEngine(apiKey = apiKey)
-            else -> OfflineWhisperEngine(this)
+        try {
+            translationEngine = when (engineType) {
+                ENGINE_HYBRID_CLOUD -> CloudWhisperEngine(apiKey = apiKey)
+                else -> OfflineWhisperEngine(this)
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error initializing translation engine", e)
+            overlayManager?.updateSubtitle("Engine init failed: ${e.message}")
         }
     }
 
@@ -154,9 +178,15 @@ class AudioCaptureService : Service() {
         val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mediaProjection != null) {
+        if (mediaProjection == null) {
+            Log.e(TAG, "MediaProjection token is null")
+            overlayManager?.updateSubtitle("Error: MediaProjection permission not granted")
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                // Register callback as required by Android 14+
+                // Android 14 requires callback registration before capture
                 mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                     override fun onStop() {
                         Log.w(TAG, "MediaProjection stopped by system")
@@ -164,7 +194,7 @@ class AudioCaptureService : Service() {
                     }
                 }, null)
 
-                // Configure capture for media, games, and browser audio
+                // Capture media, games, and unknown usages
                 val captureConfig = AudioPlaybackCaptureConfiguration.Builder(mediaProjection!!)
                     .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
                     .addMatchingUsage(AudioAttributes.USAGE_GAME)
@@ -184,27 +214,30 @@ class AudioCaptureService : Service() {
                     .build()
 
                 audioRecord?.startRecording()
+                overlayManager?.updateStatus("🟢 Listening to System Audio")
                 startCaptureLoop()
 
             } catch (e: SecurityException) {
-                Log.e(TAG, "Permission denied for AudioPlaybackCapture", e)
-                stopSelf()
+                Log.e(TAG, "SecurityException in AudioPlaybackCapture", e)
+                overlayManager?.updateSubtitle("Audio permission denied. Check app permissions.")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start AudioRecord with playback capture", e)
-                stopSelf()
+                overlayManager?.updateSubtitle("AudioRecord error: ${e.message}")
             }
         }
     }
 
     private fun startCaptureLoop() {
-        val processor = AudioProcessor(sampleRate = sampleRate) { pcmChunk ->
-            // Subtitle translation worker
-            overlayManager?.updateStatus("Translating...")
+        val processor = AudioProcessor(
+            sampleRate = sampleRate,
+            onStatusUpdate = { status ->
+                overlayManager?.updateStatus(status)
+            }
+        ) { pcmChunk ->
+            overlayManager?.updateStatus("🟡 Translating dialogue...")
             val englishTranslation = translationEngine?.translateAudioChunk(pcmChunk)
             if (!englishTranslation.isNullOrBlank()) {
                 overlayManager?.updateSubtitle(englishTranslation)
-            } else {
-                overlayManager?.updateStatus("Listening...")
             }
         }
 

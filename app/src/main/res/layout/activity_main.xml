@@ -50,7 +50,7 @@
                     android:id="@+id/tvPermissionStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Step 1: Overlay Permission"
+                    android:text="Step 1: Permissions"
                     android:textStyle="bold"
                     android:textSize="16sp"
                     android:textColor="#1F2937" />
@@ -59,7 +59,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="Allow 'Display over other apps' so subtitles float on your screen while watching videos."
+                    android:text="Allow 'Display over other apps' and 'Audio capture' so floating subtitles can display."
                     android:textSize="13sp"
                     android:textColor="#4B5563" />
 
@@ -92,7 +92,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Step 2: Translation Engine"
+                    android:text="Step 2: Choose Engine"
                     android:textStyle="bold"
                     android:textSize="16sp"
                     android:textColor="#1F2937" />
@@ -104,30 +104,29 @@
                     android:layout_marginTop="8dp">
 
                     <RadioButton
-                        android:id="@+id/rbOffline"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:checked="true"
-                        android:text="Offline (On-Device Whisper via ONNX)\n100% private, no internet required"
-                        android:textSize="14sp" />
-
-                    <RadioButton
                         android:id="@+id/rbCloud"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="Hybrid / Cloud (Groq Whisper - Recommended)\nUltra-fast (~200ms latency), real-time sync"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rbOffline"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="Hybrid / Cloud (Groq / OpenAI Whisper)\nUltra-fast (~200ms latency), requires API key"
+                        android:text="Offline (On-Device Whisper)\n100% private, no internet required"
                         android:textSize="14sp" />
                 </RadioGroup>
 
-                <!-- Cloud API Key input (visible only when cloud selected) -->
+                <!-- Cloud API Key input -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutApiKey"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:hint="Groq or OpenAI API Key"
-                    android:visibility="gone"
+                    android:hint="Groq API Key (Free at console.groq.com)"
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
                     <com.google.android.material.textfield.TextInputEditText
@@ -136,6 +135,41 @@
                         android:layout_height="wrap_content"
                         android:inputType="textPassword" />
                 </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Offline Model Download Section -->
+                <LinearLayout
+                    android:id="@+id/layoutOfflineDownload"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:layout_marginTop="12dp">
+
+                    <TextView
+                        android:id="@+id/tvModelStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Offline Whisper model not downloaded yet."
+                        android:textSize="12sp"
+                        android:textColor="#D97706" />
+
+                    <ProgressBar
+                        android:id="@+id/progressBarModel"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDownloadModel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="📥 Download Whisper Model (~75 MB)"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        app:cornerRadius="8dp" />
+                </LinearLayout>
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -150,15 +184,16 @@
             android:textSize="16sp"
             app:cornerRadius="12dp" />
 
-        <!-- Help Info Note -->
+        <!-- Status & Diagnostic Note -->
         <TextView
+            android:id="@+id/tvDiagnostics"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Tip: When you tap 'Start', Android will show a standard prompt: 'Live Subtitles will start capturing everything that's displayed or played on your device'. Tap 'Start now'. Audio is captured internally directly from the media player, not the microphone!"
+            android:text="How to know it's working: When started, a floating black bar appears on screen showing '🟢 Listening to System Audio'. As soon as you play a YouTube video or movie, it displays the live volume meter and translates dialogue to English!"
             android:textSize="12sp"
-            android:textColor="#6B7280"
-            android:lineSpacingExtra="2dp" />
+            android:textColor="#4B5563"
+            android:lineSpacingExtra="3dp" />
 
     </LinearLayout>
 </ScrollView>

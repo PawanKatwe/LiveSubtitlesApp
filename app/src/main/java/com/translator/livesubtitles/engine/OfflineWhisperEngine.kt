@@ -72,7 +72,7 @@ class OfflineWhisperEngine(private val context: Context) : TranslationEngine {
 
     override suspend fun translateAudioChunk(pcmData: ShortArray): String? = withContext(Dispatchers.Default) {
         if (!isInitialized || recognizer == null) {
-            return@withContext "[Offline Model: Put whisper ONNX model in app storage or use Hybrid mode]"
+            return@withContext "[Offline model not downloaded. Tap 'Download Model' in app or switch to Hybrid mode]"
         }
 
         try {

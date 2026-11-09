@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -15,12 +17,16 @@ import com.translator.livesubtitles.R
 
 /**
  * Manages the floating subtitle window overlay on Android screen.
- * Supports dragging, repositioning, and auto-clearing inactive subtitles.
+ * Uses ContextThemeWrapper to prevent theme attribute inflation crashes in Background Service.
  */
 class OverlaySubtitleManager(
     private val context: Context,
     private val onCloseRequested: () -> Unit
 ) {
+
+    companion object {
+        private const val TAG = "OverlaySubtitleManager"
+    }
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var overlayView: View? = null
@@ -36,39 +42,41 @@ class OverlaySubtitleManager(
     fun show() {
         if (overlayView != null) return
 
-        val inflater = LayoutInflater.from(context)
-        overlayView = inflater.inflate(R.layout.layout_floating_subtitle, null)
-
-        tvSubtitle = overlayView?.findViewById(R.id.tvSubtitle)
-        tvStatus = overlayView?.findViewById(R.id.tvStatus)
-        tvBadge = overlayView?.findViewById(R.id.tvEngineBadge)
-        val btnClose = overlayView?.findViewById<ImageView>(R.id.btnCloseOverlay)
-        val dragHandle = overlayView?.findViewById<View>(R.id.dragHandle)
-
-        btnClose?.setOnClickListener {
-            onCloseRequested()
-        }
-
-        // WindowManager layout params
-        layoutParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            x = 0
-            y = 200 // Initial vertical position from top
-        }
-
-        setupDragListener(dragHandle ?: overlayView!!)
-
         try {
+            // ContextThemeWrapper prevents InflateException in Service context
+            val themedContext = ContextThemeWrapper(context, R.style.Theme_LiveSubtitles)
+            val inflater = LayoutInflater.from(themedContext)
+            overlayView = inflater.inflate(R.layout.layout_floating_subtitle, null)
+
+            tvSubtitle = overlayView?.findViewById(R.id.tvSubtitle)
+            tvStatus = overlayView?.findViewById(R.id.tvStatus)
+            tvBadge = overlayView?.findViewById(R.id.tvEngineBadge)
+            val btnClose = overlayView?.findViewById<ImageView>(R.id.btnCloseOverlay)
+            val dragHandle = overlayView?.findViewById<View>(R.id.dragHandle)
+
+            btnClose?.setOnClickListener {
+                onCloseRequested()
+            }
+
+            layoutParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                x = 0
+                y = 180 // Initial vertical position below status bar
+            }
+
+            setupDragListener(dragHandle ?: overlayView!!)
+
             windowManager.addView(overlayView, layoutParams)
+            Log.i(TAG, "Floating overlay added successfully.")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to create overlay view", e)
         }
     }
 
@@ -103,20 +111,18 @@ class OverlaySubtitleManager(
         }
     }
 
-    fun updateSubtitle(text: String, isFinal: Boolean = true) {
+    fun updateSubtitle(text: String) {
         mainHandler.post {
             tvSubtitle?.text = text
-            tvStatus?.text = " • Active"
+            tvStatus?.text = " • 🟢 Active"
 
-            // Cancel any pending clear timer
             clearSubtitleRunnable?.let { mainHandler.removeCallbacks(it) }
 
-            // Fade/clear subtitle after 5 seconds of inactivity
             clearSubtitleRunnable = Runnable {
-                tvSubtitle?.text = "..."
-                tvStatus?.text = " • Listening..."
+                tvSubtitle?.text = "Listening for dialogue..."
+                tvStatus?.text = " • 🟢 Listening"
             }
-            mainHandler.postDelayed(clearSubtitleRunnable!!, 5000)
+            mainHandler.postDelayed(clearSubtitleRunnable!!, 6000)
         }
     }
 
@@ -133,7 +139,7 @@ class OverlaySubtitleManager(
                 try {
                     windowManager.removeView(it)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(TAG, "Error removing overlayView", e)
                 }
             }
             overlayView = null

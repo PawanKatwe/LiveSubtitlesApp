@@ -39,6 +39,11 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    packaging {
+        jniLibs {
+            pickFirsts.addAll(listOf("**/libonnxruntime.so", "**/libc++_shared.so"))
+        }
+    }
 }
 
 dependencies {

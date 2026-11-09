@@ -16,3 +16,6 @@ local.properties
 app/build/
 app/libs/*.aar
 *.aar
+
+release-apk/
+

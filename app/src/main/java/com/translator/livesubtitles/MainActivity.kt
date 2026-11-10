@@ -22,9 +22,11 @@ import com.translator.livesubtitles.service.AudioCaptureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
 import java.net.URL
 
 class MainActivity : AppCompatActivity() {
@@ -235,10 +237,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val downloadHttpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     private fun downloadWhisperModel() {
         binding.progressBarModel.visibility = View.VISIBLE
+        binding.progressBarModel.isIndeterminate = false
+        binding.progressBarModel.progress = 0
         binding.btnDownloadModel.isEnabled = false
-        binding.tvModelStatus.text = "Downloading Whisper model files (~75 MB)..."
+        binding.tvModelStatus.text = "Starting Whisper model download (~75 MB)..."
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -252,13 +263,14 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 for ((index, fileName) in files.withIndex()) {
-                    withContext(Dispatchers.Main) {
-                        binding.tvModelStatus.text = "Downloading ${index + 1}/${files.size}: $fileName..."
-                    }
-
                     val destFile = File(modelDir, fileName)
                     if (!destFile.exists() || destFile.length() < 100) {
-                        downloadWithRedirects("$baseUrl/$fileName", destFile)
+                        downloadWithOkHttp("$baseUrl/$fileName", destFile) { percent ->
+                            withContext(Dispatchers.Main) {
+                                binding.progressBarModel.progress = percent
+                                binding.tvModelStatus.text = "Downloading [${index + 1}/${files.size}] $fileName ($percent%)..."
+                            }
+                        }
                     }
                 }
 
@@ -279,42 +291,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun downloadWithRedirects(urlStr: String, destFile: File) {
-        var currentUrl = urlStr
-        var connection: HttpURLConnection
-        var redirectCount = 0
+    private suspend fun downloadWithOkHttp(urlStr: String, destFile: File, onProgress: suspend (Int) -> Unit) {
+        val request = Request.Builder().url(urlStr).build()
+        downloadHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+            val body = response.body ?: throw Exception("Empty response body")
+            val totalBytes = body.contentLength()
+            var downloaded = 0L
 
-        while (redirectCount < 5) {
-            val url = URL(currentUrl)
-            connection = url.openConnection() as HttpURLConnection
-            connection.connectTimeout = 20000
-            connection.readTimeout = 40000
-            connection.instanceFollowRedirects = false // Manually handle 302/307 to CDN
-            val code = connection.responseCode
-
-            if (code == HttpURLConnection.HTTP_MOVED_PERM ||
-                code == HttpURLConnection.HTTP_MOVED_TEMP ||
-                code == 307 || code == 308) {
-                val location = connection.getHeaderField("Location")
-                if (location != null) {
-                    currentUrl = location
-                    redirectCount++
-                    continue
-                }
-            }
-
-            if (code == HttpURLConnection.HTTP_OK) {
-                connection.inputStream.use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
+            val tempFile = File(destFile.parentFile, "${destFile.name}.tmp")
+            val buffer = ByteArray(16384)
+            tempFile.outputStream().use { output ->
+                body.byteStream().use { input ->
+                    var bytesRead: Int
+                    var lastPercent = -1
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        downloaded += bytesRead
+                        if (totalBytes > 0) {
+                            val percent = ((downloaded * 100) / totalBytes).toInt()
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                onProgress(percent)
+                            }
+                        }
                     }
                 }
-                return
-            } else {
-                throw Exception("HTTP $code from $currentUrl")
             }
+            if (destFile.exists()) destFile.delete()
+            tempFile.renameTo(destFile)
         }
-        throw Exception("Too many redirects")
     }
 
     private fun startAudioService(resultCode: Int, resultData: Intent) {
